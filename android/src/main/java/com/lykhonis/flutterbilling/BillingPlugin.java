@@ -7,6 +7,7 @@ import android.util.Log;
 
 import com.android.billingclient.api.BillingClient;
 import com.android.billingclient.api.BillingClient.BillingResponse;
+import com.android.billingclient.api.BillingClient.FeatureType;
 import com.android.billingclient.api.BillingClient.SkuType;
 import com.android.billingclient.api.BillingClientStateListener;
 import com.android.billingclient.api.BillingFlowParams;
@@ -93,6 +94,10 @@ public final class BillingPlugin implements MethodCallHandler {
             purchase(methodCall.<String>argument("identifier"), result);
         } else if ("fetchProducts".equals(methodCall.method)) {
             fetchProducts(methodCall.<List<String>>argument("identifiers"), result);
+        } else if("fetchSubscriptions".equals(methodCall.method)) {
+            fetchSubscriptions(methodCall.<List<String>>argument("identifiers"), result);
+        } else if ("subscribe".equals(methodCall.method)) {
+            subscribe(methodCall.<String>argument("identifier"), result);
         } else {
             result.notImplemented();
         }
@@ -121,6 +126,7 @@ public final class BillingPlugin implements MethodCallHandler {
                                         product.put("description", details.getDescription());
                                         product.put("currency", details.getPriceCurrencyCode());
                                         product.put("amount", details.getPriceAmountMicros() / 10_000L);
+                                        product.put("type", details.getType());
                                         products.add(product);
                                     }
 
@@ -164,18 +170,100 @@ public final class BillingPlugin implements MethodCallHandler {
         });
     }
 
+    private void subscribe(final String identifier, final Result result) {
+        executeServiceRequest(new Request() {
+            @Override
+            public void execute() {
+              final int subscriptionSupportResponse = billingClient.isFeatureSupported(FeatureType.SUBSCRIPTIONS);
+              if (BillingResponse.OK != subscriptionSupportResponse) {
+                    result.error("NOT SUPPORTED", "Subscriptions are not supported.", null);
+                    return;
+              }
+
+              final int responseCode = billingClient.launchBillingFlow(
+                      activity,
+                      BillingFlowParams.newBuilder()
+                              .setSku(identifier)
+                              .setType(SkuType.SUBS)
+                              .build());
+
+              if (responseCode == BillingResponse.OK) {
+                  pendingPurchaseRequests.put(identifier, result);
+              } else {
+                  result.error("ERROR", "Failed to subscribe with error " + responseCode, null);
+              }
+            }
+
+            @Override
+            public void failed() {
+              result.error("UNAVAILABLE", "Billing service is unavailable!", null);
+            }
+        });
+    }
+
     private void fetchPurchases(final Result result) {
         executeServiceRequest(new Request() {
             @Override
             public void execute() {
-                final Purchase.PurchasesResult purchasesResult = billingClient.queryPurchases(SkuType.INAPP);
-                final int responseCode = purchasesResult.getResponseCode();
+                final Purchase.PurchasesResult productResult = billingClient.queryPurchases(SkuType.INAPP);
+                final int productResponseCode = productResult.getResponseCode();
 
-                if (responseCode == BillingResponse.OK) {
-                    result.success(getIdentifiers(purchasesResult.getPurchasesList()));
+                final Purchase.PurchasesResult subscriptionResult = billingClient.queryPurchases(SkuType.SUBS);
+                final int subscriptionResponseCode = subscriptionResult.getResponseCode();
+
+                if (productResponseCode == BillingResponse.OK) {
+                    List<String> identifiers = getIdentifiers(productResult.getPurchasesList());
+                    if(subscriptionResponseCode == BillingResponse.OK)
+                    {
+                        identifiers.addAll(getIdentifiers(subscriptionResult.getPurchasesList()));
+                    }
+                    result.success(identifiers);
                 } else {
-                    result.error("ERROR", "Failed to query purchases with error " + responseCode, null);
+                    result.error("ERROR", "Failed to query purchases with product error " + productResponseCode + 
+                                    " or subscription error " + subscriptionResponseCode, null);
                 }
+            }
+
+            @Override
+            public void failed() {
+                result.error("UNAVAILABLE", "Billing service is unavailable!", null);
+            }
+        });
+    }
+
+    private void fetchSubscriptions(final List<String> identifiers, final Result result) {
+        executeServiceRequest(new Request() {
+            @Override
+            public void execute() {
+                billingClient.querySkuDetailsAsync(
+                        SkuDetailsParams.newBuilder()
+                                        .setSkusList(identifiers)
+                                        .setType(SkuType.SUBS)
+                                        .build(),
+                        new SkuDetailsResponseListener() {
+                            @Override
+                            public void onSkuDetailsResponse(int responseCode, List<SkuDetails> skuDetailsList) {
+                                if (responseCode == BillingResponse.OK) {
+                                    final List<Map<String, Object>> products = new ArrayList<>();
+
+                                    for (SkuDetails details : skuDetailsList) {
+                                        final Map<String, Object> product = new HashMap<>();
+                                        product.put("identifier", details.getSku());
+                                        product.put("price", details.getPrice());
+                                        product.put("title", details.getTitle());
+                                        product.put("description", details.getDescription());
+                                        product.put("currency", details.getPriceCurrencyCode());
+                                        product.put("amount", details.getPriceAmountMicros() / 10_000L);
+                                        product.put("type", details.getType());
+                                        products.add(product);
+                                    }
+
+                                    result.success(products);
+                                } else {
+                                    result.error("ERROR", "Failed to fetch Subscriptions!", null);
+                                }
+                            }
+                        });
             }
 
             @Override
