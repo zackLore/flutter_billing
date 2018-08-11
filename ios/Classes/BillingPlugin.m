@@ -1,9 +1,14 @@
 #import "BillingPlugin.h"
 
-@interface BillingPlugin()
+@interface BillingPlugin() {
+    BOOL autoReceiptConform;
+    SKPaymentTransaction *currentTransaction;
+    FlutterResult flutterResult;
+}
 
 @property (atomic, retain) NSMutableArray<FlutterResult>* fetchPurchases;
 @property (atomic, retain) NSMutableDictionary<NSValue*, FlutterResult>* fetchProducts;
+@property (atomic, retain) NSMutableDictionary<NSValue*, FlutterResult>* fetchSubscriptions;
 @property (atomic, retain) NSMutableDictionary<SKPayment*, FlutterResult>* requestedPayments;
 @property (atomic, retain) NSArray<SKProduct*>* products;
 @property (atomic, retain) NSMutableSet<NSString*>* purchases;
@@ -15,6 +20,7 @@
 
 @synthesize fetchPurchases;
 @synthesize fetchProducts;
+@synthesize fetchSubscriptions;
 @synthesize requestedPayments;
 @synthesize products;
 @synthesize purchases;
@@ -60,6 +66,13 @@
         NSArray<NSString*>* identifiers = (NSArray<NSString*>*)call.arguments[@"identifiers"];
         if (identifiers != nil) {
             [self fetchProducts:identifiers result:result];
+        } else {
+            result([FlutterError errorWithCode:@"ERROR" message:@"Invalid or missing arguments!" details:nil]);
+        }
+    } else if ([@"subscribe" isEqualToString:call.method]) {
+        NSArray<NSString*>* identifiers = (NSArray<NSString*>*)call.argument[@"identifiers"];
+        if (identifiers != nil) {
+            [self fetchSubscriptions:identifiers result: result];
         } else {
             result([FlutterError errorWithCode:@"ERROR" message:@"Invalid or missing arguments!" details:nil]);
         }
@@ -163,6 +176,8 @@
     }
 }
 
+// TODO: Add Subscribe
+
 - (void)fetchProducts:(NSArray<NSString*>*)identifiers result:(FlutterResult)result {
     SKProductsRequest* request = [[SKProductsRequest alloc] initWithProductIdentifiers:[NSSet setWithArray:identifiers]];
     [request setDelegate:self];
@@ -171,6 +186,8 @@
     
     [request start];
 }
+
+// TODO: Add fetchSubscriptions call
 
 - (void)request:(SKRequest *)request didFailWithError:(NSError *)error {
     NSValue* key = [NSValue valueWithNonretainedObject:request];
