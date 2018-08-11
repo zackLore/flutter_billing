@@ -57,8 +57,8 @@ public final class BillingPlugin implements MethodCallHandler {
         billingServiceStatus = BillingServiceStatus.IDLE;
 
         billingClient = BillingClient.newBuilder(activity)
-                                     .setListener(new BillingListener())
-                                     .build();
+                .setListener(new BillingListener())
+                .build();
 
         final Application application = activity.getApplication();
 
@@ -94,7 +94,7 @@ public final class BillingPlugin implements MethodCallHandler {
             purchase(methodCall.<String>argument("identifier"), result);
         } else if ("fetchProducts".equals(methodCall.method)) {
             fetchProducts(methodCall.<List<String>>argument("identifiers"), result);
-        } else if("fetchSubscriptions".equals(methodCall.method)) {
+        } else if ("fetchSubscriptions".equals(methodCall.method)) {
             fetchSubscriptions(methodCall.<List<String>>argument("identifiers"), result);
         } else if ("subscribe".equals(methodCall.method)) {
             subscribe(methodCall.<String>argument("identifier"), result);
@@ -109,26 +109,14 @@ public final class BillingPlugin implements MethodCallHandler {
             public void execute() {
                 billingClient.querySkuDetailsAsync(
                         SkuDetailsParams.newBuilder()
-                                        .setSkusList(identifiers)
-                                        .setType(SkuType.INAPP)
-                                        .build(),
+                                .setSkusList(identifiers)
+                                .setType(SkuType.INAPP)
+                                .build(),
                         new SkuDetailsResponseListener() {
                             @Override
                             public void onSkuDetailsResponse(int responseCode, List<SkuDetails> skuDetailsList) {
                                 if (responseCode == BillingResponse.OK) {
-                                    final List<Map<String, Object>> products = new ArrayList<>();
-
-                                    for (SkuDetails details : skuDetailsList) {
-                                        final Map<String, Object> product = new HashMap<>();
-                                        product.put("identifier", details.getSku());
-                                        product.put("price", details.getPrice());
-                                        product.put("title", details.getTitle());
-                                        product.put("description", details.getDescription());
-                                        product.put("currency", details.getPriceCurrencyCode());
-                                        product.put("amount", details.getPriceAmountMicros() / 10_000L);
-                                        product.put("type", details.getType());
-                                        products.add(product);
-                                    }
+                                    List<Map<String, Object>> products = getProductsFromSkuDetails(skuDetailsList);
 
                                     result.success(products);
                                 } else {
@@ -145,6 +133,24 @@ public final class BillingPlugin implements MethodCallHandler {
         });
     }
 
+    private List<Map<String, Object>> getProductsFromSkuDetails(List<SkuDetails> skuDetailsList) {
+        final List<Map<String, Object>> products = new ArrayList<>();
+
+        for (SkuDetails details : skuDetailsList) {
+            final Map<String, Object> product = new HashMap<>();
+            product.put("identifier", details.getSku());
+            product.put("price", details.getPrice());
+            product.put("title", details.getTitle());
+            product.put("description", details.getDescription());
+            product.put("currency", details.getPriceCurrencyCode());
+            product.put("amount", details.getPriceAmountMicros() / 10_000L);
+            product.put("type", details.getType());
+            products.add(product);
+        }
+
+        return products;
+    }
+
     private void purchase(final String identifier, final Result result) {
         executeServiceRequest(new Request() {
             @Override
@@ -152,9 +158,9 @@ public final class BillingPlugin implements MethodCallHandler {
                 final int responseCode = billingClient.launchBillingFlow(
                         activity,
                         BillingFlowParams.newBuilder()
-                                         .setSku(identifier)
-                                         .setType(SkuType.INAPP)
-                                         .build());
+                                .setSku(identifier)
+                                .setType(SkuType.INAPP)
+                                .build());
 
                 if (responseCode == BillingResponse.OK) {
                     pendingPurchaseRequests.put(identifier, result);
@@ -174,29 +180,29 @@ public final class BillingPlugin implements MethodCallHandler {
         executeServiceRequest(new Request() {
             @Override
             public void execute() {
-              final int subscriptionSupportResponse = billingClient.isFeatureSupported(FeatureType.SUBSCRIPTIONS);
-              if (BillingResponse.OK != subscriptionSupportResponse) {
+                final int subscriptionSupportResponse = billingClient.isFeatureSupported(FeatureType.SUBSCRIPTIONS);
+                if (BillingResponse.OK != subscriptionSupportResponse) {
                     result.error("NOT SUPPORTED", "Subscriptions are not supported.", null);
                     return;
-              }
+                }
 
-              final int responseCode = billingClient.launchBillingFlow(
-                      activity,
-                      BillingFlowParams.newBuilder()
-                              .setSku(identifier)
-                              .setType(SkuType.SUBS)
-                              .build());
+                final int responseCode = billingClient.launchBillingFlow(
+                        activity,
+                        BillingFlowParams.newBuilder()
+                                .setSku(identifier)
+                                .setType(SkuType.SUBS)
+                                .build());
 
-              if (responseCode == BillingResponse.OK) {
-                  pendingPurchaseRequests.put(identifier, result);
-              } else {
-                  result.error("ERROR", "Failed to subscribe with error " + responseCode, null);
-              }
+                if (responseCode == BillingResponse.OK) {
+                    pendingPurchaseRequests.put(identifier, result);
+                } else {
+                    result.error("ERROR", "Failed to subscribe with error " + responseCode, null);
+                }
             }
 
             @Override
             public void failed() {
-              result.error("UNAVAILABLE", "Billing service is unavailable!", null);
+                result.error("UNAVAILABLE", "Billing service is unavailable!", null);
             }
         });
     }
@@ -211,16 +217,14 @@ public final class BillingPlugin implements MethodCallHandler {
                 final Purchase.PurchasesResult subscriptionResult = billingClient.queryPurchases(SkuType.SUBS);
                 final int subscriptionResponseCode = subscriptionResult.getResponseCode();
 
-                if (productResponseCode == BillingResponse.OK) {
+                if (productResponseCode == BillingResponse.OK && subscriptionResponseCode == BillingResponse.OK) {
                     List<String> identifiers = getIdentifiers(productResult.getPurchasesList());
-                    if(subscriptionResponseCode == BillingResponse.OK)
-                    {
-                        identifiers.addAll(getIdentifiers(subscriptionResult.getPurchasesList()));
-                    }
+                    identifiers.addAll(getIdentifiers(subscriptionResult.getPurchasesList()));
+
                     result.success(identifiers);
                 } else {
-                    result.error("ERROR", "Failed to query purchases with product error " + productResponseCode + 
-                                    " or subscription error " + subscriptionResponseCode, null);
+                    result.error("ERROR", "Failed to query purchases with product error " + productResponseCode +
+                            " or subscription error " + subscriptionResponseCode, null);
                 }
             }
 
@@ -237,26 +241,14 @@ public final class BillingPlugin implements MethodCallHandler {
             public void execute() {
                 billingClient.querySkuDetailsAsync(
                         SkuDetailsParams.newBuilder()
-                                        .setSkusList(identifiers)
-                                        .setType(SkuType.SUBS)
-                                        .build(),
+                                .setSkusList(identifiers)
+                                .setType(SkuType.SUBS)
+                                .build(),
                         new SkuDetailsResponseListener() {
                             @Override
                             public void onSkuDetailsResponse(int responseCode, List<SkuDetails> skuDetailsList) {
                                 if (responseCode == BillingResponse.OK) {
-                                    final List<Map<String, Object>> products = new ArrayList<>();
-
-                                    for (SkuDetails details : skuDetailsList) {
-                                        final Map<String, Object> product = new HashMap<>();
-                                        product.put("identifier", details.getSku());
-                                        product.put("price", details.getPrice());
-                                        product.put("title", details.getTitle());
-                                        product.put("description", details.getDescription());
-                                        product.put("currency", details.getPriceCurrencyCode());
-                                        product.put("amount", details.getPriceAmountMicros() / 10_000L);
-                                        product.put("type", details.getType());
-                                        products.add(product);
-                                    }
+                                    getProductsFromSkuDetails(skuDetailsList);
 
                                     result.success(products);
                                 } else {

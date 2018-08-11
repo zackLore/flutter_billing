@@ -3,6 +3,12 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:synchronized/synchronized.dart';
 
+enum BillingProductType
+{
+    INAPP,
+    SUBS
+}
+
 /// A single product that can be purchased by a user in app.
 class BillingProduct {
   BillingProduct({
@@ -40,7 +46,7 @@ class BillingProduct {
   final int amount;
 
   // Type of product. e.g. SUBS or INAPP
-  final String type;
+  final BillingProductType type;
 
   @override
   bool operator ==(Object other) =>
